@@ -8,3 +8,5 @@ eval/out/mem-*/
 Thumbs.db
 eval/out-run*/
 eval/results-run*.md
+companion-memory.json
+memory-data/

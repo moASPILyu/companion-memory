@@ -53,20 +53,28 @@ AI 整理记忆时最常犯、也最难发现的错，是**把自己说的话记
 - **自动改的门槛很严，其余的交给 AI 自己判断。** 校对模型大约七成准，硬改会改反。拿不准的疑点连同聊天原文附进下一次整理，“错了就改，拿不准就留着”。真实数据上 6 条疑点改对 5 条。
 - **原话事实必须逐字引用**，引文不在那条消息里就丢掉，挡掉模型编造。
 
-## 快速开始
+## 快速开始：不改代码，换个 API 地址就行
 
-需要 Node.js 18.17 以上。
+需要 [Node.js](https://nodejs.org) 18 以上，没有其他依赖。
+
+1. 下载本仓库（`git clone https://github.com/moASPILyu/companion-memory.git`，或在 GitHub 页面 Code → Download ZIP）。
+2. Windows 双击 `start.bat`；macOS / Linux 运行 `./start.sh`。第一次会问几个问题：原来用哪家的接口、AI 叫什么、怎么称呼用户。
+3. 把机器人设置里的 **API 地址**改成 `http://127.0.0.1:8787/v1`，key 和模型名不用动。
+
+之后每句话都会记进流水账，每一轮自动拼上记忆，空闲时整理笔记、对账。浏览器打开 `http://127.0.0.1:8787/memory/note` 能看到她写的笔记。
+
+能填“自定义 OpenAI 兼容地址”的机器人、聊天前端都能这么接。自己写的机器人（Python 等任何语言）也可以调几个 HTTP 接口。详见 **[接入指南](docs/接入.md)**。
+
+### 先试试看
 
 ```bash
-git clone https://github.com/moASPILyu/companion-memory.git
-cd companion-memory
 npm test                                   # 假模型跑全部测试，不花钱
 MEMORY_LLM_KEY=你的key npm run demo         # 用合成聊天真跑一遍（默认 DeepSeek）
 ```
 
 Windows PowerShell 里设环境变量：`$env:MEMORY_LLM_KEY="你的key"; npm run demo`。
 
-## 接进你的机器人
+## 在代码里用（Node）
 
 ```js
 import { CompanionMemory } from 'companion-memory';
@@ -137,7 +145,7 @@ deepseek-flash 跑 3 轮的结果：
 
 ## 局限
 
-- 只为“一个 AI 陪一个人”设计，不分多用户。
+- 为“一个 AI 陪一个人”设计。多个人用同一个机器人时可以按人分开存（请求头 `X-Memory-User`），但群聊里多人说话会被当成同一个人。
 - 笔记有长度上限（默认 2400 字），长尾的事靠原话事实和回顾按话题翻，检索是字组匹配，不是向量。
 - 提示词全是中文；换语言要改提示词和几处中文正则（说话人检查、错误分类）。
 - 没跑过 LoCoMo、LongMemEval 这类公开评测。

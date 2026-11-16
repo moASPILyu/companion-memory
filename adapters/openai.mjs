@@ -2,7 +2,7 @@
 // key 从环境变量读，不写进代码和配置文件。
 //
 //   import { openaiLLM } from 'companion-memory/adapters/openai.mjs';
-//   const llm = openaiLLM({ baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' });
+//   const llm = openaiLLM({ baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' });
 //
 // maxTokens 留够：整理笔记要输出两三千字，开了思考的模型还要再加。
 // tokenCap：这个 llm 累计用量超过就抛错，防止脚本跑飞。

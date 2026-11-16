@@ -4,15 +4,32 @@
   "description": "陪伴型 AI 的长期记忆：流水账为准、原话事实、AI 自己写的了解笔记、周月回顾，加一套记忆的 dreaming 自纠错机制——空闲时回看原话逐句对账，记错了自己改。",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=18.17" },
+  "engines": {
+    "node": ">=18.17"
+  },
   "exports": {
     ".": "./src/index.mjs",
-    "./adapters/openai.mjs": "./adapters/openai.mjs"
+    "./adapters/openai.mjs": "./adapters/openai.mjs",
+    "./server": "./src/server.mjs"
   },
   "scripts": {
     "test": "node --test",
     "demo": "node examples/demo.mjs",
-    "eval": "node eval/run.mjs"
+    "eval": "node eval/run.mjs",
+    "start": "node bin/companion-memory.mjs start"
   },
-  "files": ["src", "adapters", "examples", "docs", "README.md", "LICENSE"]
+  "files": [
+    "src",
+    "adapters",
+    "bin",
+    "examples",
+    "docs",
+    "start.bat",
+    "start.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "companion-memory": "bin/companion-memory.mjs"
+  }
 }
