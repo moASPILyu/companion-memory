@@ -1,0 +1,83 @@
+{
+ "res": {
+  "audit": [
+   {
+    "caught": 10,
+    "false_": 0,
+    "auto": 1,
+    "doubts": 9,
+    "wrongBefore": 10,
+    "wrongAfterAudit": 9,
+    "wrongAfterDoubts": [],
+    "lost": []
+   },
+   {
+    "caught": 9,
+    "false_": 0,
+    "auto": 1,
+    "doubts": 8,
+    "wrongBefore": 10,
+    "wrongAfterAudit": 9,
+    "wrongAfterDoubts": [
+     "准备答辩",
+     "初稿还没写完"
+    ],
+    "lost": []
+   },
+   {
+    "caught": 10,
+    "false_": 0,
+    "auto": 1,
+    "doubts": 9,
+    "wrongBefore": 10,
+    "wrongAfterAudit": 9,
+    "wrongAfterDoubts": [],
+    "lost": []
+   }
+  ],
+  "fresh": {
+   "role": [
+    {
+     "traps": [],
+     "flags": []
+    },
+    {
+     "traps": [],
+     "flags": [
+      "小呆瓜"
+     ]
+    },
+    {
+     "traps": [],
+     "flags": [
+      "小呆瓜"
+     ]
+    }
+   ],
+   "who": [
+    {
+     "traps": [],
+     "flags": [
+      "小呆瓜"
+     ]
+    },
+    {
+     "traps": [],
+     "flags": [
+      "小呆瓜"
+     ]
+    },
+    {
+     "traps": [],
+     "flags": []
+    }
+   ]
+  }
+ },
+ "usage": {
+  "prompt": 70322,
+  "completion": 52315,
+  "cached": 52962,
+  "calls": 63
+ }
+}

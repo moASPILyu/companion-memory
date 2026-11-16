@@ -1,0 +1,10 @@
+node_modules/
+data/
+examples/out/
+eval/out/mem-*/
+*.tmp
+.env
+.DS_Store
+Thumbs.db
+eval/out-run*/
+eval/results-run*.md
