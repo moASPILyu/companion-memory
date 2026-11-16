@@ -62,13 +62,14 @@ async function init() {
   let ai = await ask('笔记里怎么称呼 AI 自己的第三人称（她/他/TA，要和上一个不同）', user === '她' ? 'TA' : '她');
   if (ai === user) { ai = user === 'TA' ? '她' : 'TA'; console.log(`两个称呼一样会分不清谁说的，AI 改用“${ai}”。`); }
   const port = Number(await ask('代理端口', '8787')) || 8787;
+  const recallTool = /^[yY是]/.test(await ask('让 AI 能自己翻聊天记录吗？（用户问“上次那个……”时先翻再答；模型要支持工具调用）y/n', 'y'));
   console.log('\n整理记忆要调模型，需要一把 key。');
   console.log('  · 只用“改 API 地址”的代理方式：直接回车，会借用机器人请求里带的 key（只放内存）。');
   console.log('  · 用 AstrBot 插件或 HTTP 接口：机器人不经过代理，借不到 key，这里要填。');
   const key = await ask('整理记忆用的 key（存进本目录 .env，只在本机）', '', true);
   rl.close(); process.stdin.pause();
   if (key) { saveKey(key); process.env.MEMORY_LLM_KEY = key; console.log('key 已存到 ' + ENV); }
-  const cfg = { port, host: '127.0.0.1', upstream, dataDir: './memory-data', organizer: { model }, persona: { name, about, traits }, labels: { user, self: '我', ai }, offset: 8, inject: 'user', idleMinutes: 5 };
+  const cfg = { port, host: '127.0.0.1', upstream, dataDir: './memory-data', organizer: { model }, persona: { name, about, traits }, labels: { user, self: '我', ai }, offset: 8, inject: 'user', idleMinutes: 5, recallTool };
   fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
   console.log('\n已写入 ' + CONFIG + '，以后想改直接改这个文件。\n');
   return cfg;

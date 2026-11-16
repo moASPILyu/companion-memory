@@ -18,6 +18,7 @@ import { dueReview, weekRecords, weeklyPrompt, monthlyPrompt, rangeText, isoWeek
 import { splitClaims, evidenceBase, checkPrompt, parseVerdict, gate, applyFixes, reportMd, buildDoubts, doubtRule, doubtsAfter, claimKey, SYS } from './audit.mjs';
 import { weekStats, trendMd } from './stats.mjs';
 import { buildContext } from './context.mjs';
+import { recallEpisodes, searchChat, searchArgsIssue } from './recall.mjs';
 import { healthReport } from './health.mjs';
 
 const MIN = 60e3, DAY = 86400e3;
@@ -35,6 +36,8 @@ export const DEFAULTS = {
   style: { minNew: 20, quiet: 30 * MIN, maxChars: 900, maxLen: 1400 },
   reviews: { quiet: 10 * MIN, minRows: 20 },
   audit: { per: 6, quiet: 30 * MIN, maxClaims: 120, maxDoubts: 12 },
+  episodes: { max: 3, skipHours: 3 },
+  search: { perWindow: 3, windowMs: 2 * MIN, perDay: 30 },
   retryAfter: 30 * MIN,
 };
 
@@ -47,7 +50,8 @@ export class CompanionMemory {
    */
   constructor({ dir, llm, persona = {}, labels, offset = 8, now = () => Date.now(), extras = () => [], features = {}, options = {} }) {
     this.dir = dir; this.llm = llm; this.persona = persona; this.labels = resolveLabels(labels); this.offset = offset; this.now = now; this.extras = extras;
-    this.features = { facts: true, note: true, style: true, reviews: true, audit: true, health: true, ...features };
+    this.features = { facts: true, note: true, style: true, reviews: true, episodes: true, audit: true, health: true, ...features };
+    this.searches = [];
     this.opt = Object.fromEntries(Object.entries(DEFAULTS).map(([k, v]) => [k, typeof v === 'object' ? { ...v, ...(options[k] || {}) } : (options[k] ?? v)]));
     this.ledger = new Ledger({ dir: path.join(dir, 'ledger'), offset, now });
     this.busy = false; this.failedAt = {};
@@ -70,7 +74,24 @@ export class CompanionMemory {
   /** 这一轮要拼进提示词的记忆块。query 是用户这一轮说的话。 */
   context(query = '') {
     const reviews = this.features.reviews ? recallReviews(this.reviewList(), query) : [];
-    return buildContext({ now: this.now(), offset: this.offset, query, note: this.note(), style: this.features.style ? this.style() : '', facts: this.features.facts ? this.facts() : [], reviews, userLabel: this.labels.user });
+    const episodes = this.features.episodes ? recallEpisodes(this.rows(), query, { now: this.now(), offset: this.offset, labels: this.labels, ...this.opt.episodes }) : [];
+    return buildContext({ now: this.now(), offset: this.offset, query, note: this.note(), style: this.features.style ? this.style() : '', facts: this.features.facts ? this.facts() : [], reviews, episodes, userLabel: this.labels.user });
+  }
+
+  /**
+   * 翻记录（给 AI 当工具用，工具定义见 searchTool()）。args：{query?, date?, who?}。返回 {ok, hits, text}。
+   * 次数有上限（默认 2 分钟 3 次、每天 30 次），防止模型每句都翻。只记参数和命中数，不记结果全文。
+   */
+  search(args = {}) {
+    const issue = searchArgsIssue(args, { labels: this.labels }); if (issue) return { ok: false, hits: 0, text: issue };
+    const o = this.opt.search, now = this.now(), day = localDay(now, this.offset);
+    this.searches = this.searches.filter(x => x.day === day);
+    if (this.searches.length >= o.perDay) return { ok: false, hits: 0, text: '今天翻得够多了，凭印象说吧，拿不准就说记不清。' };
+    if (this.searches.filter(x => now - x.at < o.windowMs).length >= o.perWindow) return { ok: false, hits: 0, text: '刚翻过好几次了，先凭现在知道的回答。' };
+    this.searches.push({ at: now, day });
+    const r = searchChat(this.rows(), args, { now, offset: this.offset, labels: this.labels });
+    this.event('chat_search', { query: args.query ?? null, date: args.date ?? null, who: args.who ?? null, hits: r.hits });
+    return r;
   }
 
   // —— 空闲时跑 ——

@@ -4,10 +4,14 @@
 //   机器人原来调 https://api.deepseek.com，现在把 API 地址改成 http://127.0.0.1:8787/v1，key 和模型名照旧。
 //   每次请求：记下用户最后一句 → 把记忆块拼进这一轮 → 转发给原来的接口 → 回复原样返回，同时记下 AI 的回复。
 //   支持流式（stream: true）。空闲时自动整理、对账。
+//   recallTool: true 时，代理还会给模型加一个“翻聊天记录”工具；模型调它时由代理自己查、自己把结果喂回去，
+//   机器人那边只收到最后的回复，不需要认识这个工具。
 //
 // HTTP 接口（任何语言的机器人都能用，见 docs/接入.md）：
 //   POST /memory/log      {role:'user'|'assistant', text}
 //   POST /memory/context  {query} → {context}
+//   POST /memory/search   {query?, date?, who?} → {ok, hits, text}（翻聊天记录，给机器人自己的工具用）
+//   GET  /memory/tool     → 翻记录工具的 OpenAI 格式定义
 //   POST /memory/idle     → {ran}
 //   GET  /memory/note     → 笔记全文
 //   GET  /memory/status   → 条数、最近事件
@@ -19,6 +23,7 @@ import path from 'node:path';
 import { CompanionMemory } from './memory.mjs';
 import { openaiLLM } from '../adapters/openai.mjs';
 import { resolveLabels } from './text.mjs';
+import { searchTool } from './recall.mjs';
 
 const HOP = new Set(['host', 'connection', 'content-length', 'accept-encoding', 'keep-alive', 'transfer-encoding', 'upgrade', 'x-memory', 'x-memory-user']);
 const REGEN_MS = 10 * 60e3;
@@ -59,6 +64,8 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
  *                没设就借用机器人请求里带的 key（只在内存里，不落盘）
  *   inject       'user'（默认）或 'system'
  *   idleMinutes  每隔几分钟检查一次要不要整理（默认 5）
+ *   recallTool   true：给模型加“翻聊天记录”工具，代理自己处理（模型要支持工具调用）；默认 false
+ *   recallToolName 工具名，默认 recall_chat（和机器人已有工具撞名时改）
  *   llm          直接给一个 llm(system, user) 函数（测试用），给了就不用 organizer
  */
 export function createMemoryServer(cfg) {
@@ -85,6 +92,7 @@ export function createMemoryServer(cfg) {
    * 记用户这一句。“重新生成”会把同样的历史再发一遍：消息条数和最后一句都跟上次一样（10 分钟内），这时不重复记，
    * 新回复标 regen。用户真的又说了一遍同样的话，历史会多出上一轮的回复，条数不同，照常记。
    */
+  const toolName = cfg.recallToolName || 'recall_chat';
   const lastTurn = new Map();
   function logUser(mem, text, count) {
     const prev = lastTurn.get(mem), now = mem.now();
@@ -108,32 +116,79 @@ export function createMemoryServer(cfg) {
     const meta = continuing || logUser(mem, text, msgs.length) ? {} : { regen: true };
     const block = mem.context(text);
     body.messages = injectMemory(msgs, block, { inject: cfg.inject });
-    const r = await upstreamFetch(req, JSON.stringify(body), rest);
-    const ctype = r.headers.get('content-type') || '';
-    if (!r.ok) { res.writeHead(r.status, { 'Content-Type': ctype || 'application/json' }); res.end(Buffer.from(await r.arrayBuffer())); return; }
-    if (body.stream || ctype.includes('text/event-stream')) {
-      res.writeHead(r.status, { 'Content-Type': ctype || 'text/event-stream', 'Cache-Control': 'no-cache' });
-      let buf = '', reply = '';
-      const reader = r.body.getReader(), dec = new TextDecoder();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-        buf += dec.decode(value, { stream: true });
-        let k; while ((k = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, k).trim(); buf = buf.slice(k + 1);
-          if (!line.startsWith('data:')) continue;
-          const d = line.slice(5).trim(); if (d === '[DONE]') continue;
-          try { reply += JSON.parse(d).choices?.[0]?.delta?.content || ''; } catch {}
-        }
+    const tools = Array.isArray(body.tools) ? body.tools : body.tools === undefined ? [] : null;
+    const useTool = !!cfg.recallTool && !!tools && body.tool_choice !== 'none' && !tools.some(t => t?.function?.name === toolName);
+    const setTool = on => { if (!useTool) return; if (on) body.tools = [...tools, searchTool({ labels, name: toolName })]; else if (tools.length) body.tools = tools; else delete body.tools; };
+    // 模型调了翻记录：查好，把这一步和结果接到消息后面再问一次。同一条里别的工具调用丢掉（下一轮模型会再发）。
+    const answerTools = (msg, ours) => {
+      body.messages = [...body.messages,
+        { role: 'assistant', content: msg.content ?? '', ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}), tool_calls: ours },
+        ...ours.map(tc => { let a = {}; try { a = JSON.parse(tc.function.arguments || '{}'); } catch {} return { role: 'tool', tool_call_id: tc.id, content: mem.search(a).text }; })];
+    };
+    const MAX_ROUNDS = 3;
+    let reply = '', started = false;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const last = round === MAX_ROUNDS - 1;
+      setTool(!last); // 最后一轮不给工具，让它直接回答
+      const r = await upstreamFetch(req, JSON.stringify(body), rest);
+      const ctype = r.headers.get('content-type') || '';
+      if (!r.ok) {
+        if (started) { res.end(); break; }
+        res.writeHead(r.status, { 'Content-Type': ctype || 'application/json' }); res.end(Buffer.from(await r.arrayBuffer())); return;
       }
-      res.end();
-      if (stripThink(reply)) mem.log('assistant', stripThink(reply), meta);
-      return;
+      if (body.stream || ctype.includes('text/event-stream')) {
+        if (!started) { res.writeHead(r.status, { 'Content-Type': ctype || 'text/event-stream', 'Cache-Control': 'no-cache' }); started = true; }
+        // 正文边收边转；一出现工具调用或结束标记就先扣住，等看完是不是翻记录再决定转不转
+        let buf = '', hold = false, think = '', content = '';
+        const held = [], calls = [];
+        const onLine = line => {
+          const t = line.trim();
+          if (!t) return;
+          if (!t.startsWith('data:')) { if (hold) held.push(line); else res.write(line + '\n'); return; }
+          const d = t.slice(5).trim(); let j = null;
+          if (d !== '[DONE]') { try { j = JSON.parse(d); } catch {} }
+          const ch = j?.choices?.[0], delta = ch?.delta || {};
+          if (delta.content) content += delta.content;
+          if (delta.reasoning_content) think += delta.reasoning_content;
+          for (const tc of delta.tool_calls || []) {
+            const c = calls[tc.index ?? calls.length] ??= { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (tc.id) c.id = tc.id;
+            if (tc.function?.name) c.function.name += tc.function.name;
+            if (tc.function?.arguments) c.function.arguments += tc.function.arguments;
+          }
+          if (useTool && (delta.tool_calls || ch?.finish_reason || d === '[DONE]')) hold = true;
+          if (hold) held.push(line); else res.write(line + '\n\n');
+        };
+        const reader = r.body.getReader(), dec = new TextDecoder();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!useTool) res.write(value); // 没开工具：字节原样转
+          buf += dec.decode(value, { stream: true });
+          let k; while ((k = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, k); buf = buf.slice(k + 1);
+            if (useTool) onLine(line);
+            else { const t = line.trim(); if (t.startsWith('data:') && t.slice(5).trim() !== '[DONE]') { try { content += JSON.parse(t.slice(5)).choices?.[0]?.delta?.content || ''; } catch {} } }
+          }
+        }
+        if (useTool && buf.trim()) onLine(buf);
+        reply += content;
+        const ours = calls.filter(c => c && c.function.name === toolName);
+        if (ours.length && !last) { answerTools({ content, reasoning_content: think }, ours); continue; }
+        for (const l of held) res.write(l + (l.trim().startsWith('data:') ? '\n\n' : '\n'));
+        res.end();
+        break;
+      }
+      const out = Buffer.from(await r.arrayBuffer());
+      let j = null; try { j = JSON.parse(out.toString('utf8')); } catch {}
+      const msg = j?.choices?.[0]?.message;
+      const ours = useTool ? (msg?.tool_calls || []).filter(tc => tc?.function?.name === toolName) : [];
+      if (ours.length && !last) { reply += msg.content || ''; answerTools(msg, ours); continue; }
+      reply += msg?.content || '';
+      res.writeHead(r.status, { 'Content-Type': ctype || 'application/json' }); res.end(out);
+      break;
     }
-    const out = Buffer.from(await r.arrayBuffer());
-    res.writeHead(r.status, { 'Content-Type': ctype || 'application/json' }); res.end(out);
-    try { const reply = stripThink(JSON.parse(out.toString('utf8')).choices?.[0]?.message?.content); if (reply) mem.log('assistant', reply, meta); } catch {}
+    if (stripThink(reply)) mem.log('assistant', stripThink(reply), meta);
   }
 
   function upstreamFetch(req, body, rest) {
@@ -159,6 +214,8 @@ export function createMemoryServer(cfg) {
       return send(res, 200, { ok: true, seq: row?.seq });
     }
     if (route === 'context') return send(res, 200, { context: mem.context(String(body.query ?? url.searchParams.get('query') ?? '')) });
+    if (route === 'search' && req.method === 'POST') return send(res, 200, mem.search(Object.fromEntries(['query', 'date', 'who'].filter(k => body[k] !== undefined).map(k => [k, body[k]]))));
+    if (route === 'tool') return send(res, 200, searchTool({ labels, name: toolName }));
     if (route === 'idle' && req.method === 'POST') return send(res, 200, { ran: await mem.idle() });
     if (route === 'note') return send(res, 200, mem.note() || '（还没有笔记：攒够 30 句新聊天、停 10 分钟后会写第一版）', 'text/markdown; charset=utf-8');
     if (route === 'status') return send(res, 200, { rows: mem.rows().length, noteChars: mem.note().length, facts: mem.facts().length, events: mem.events().slice(-10) });

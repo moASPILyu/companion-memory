@@ -10,9 +10,10 @@ import { rankRelevant } from './rank.mjs';
 
 /**
  * 拼装记忆块。query 是用户这一轮说的话，用来挑相关事实和回顾段落。
- * note / style：两份笔记全文；facts：activeFacts()；reviews：recallReviews() 的结果（字符串数组）。
+ * note / style：两份笔记全文；facts：activeFacts()；reviews：recallReviews() 的结果（字符串数组）；
+ * episodes：recallEpisodes() 翻出来的以前聊天片段。
  */
-export function buildContext({ now = Date.now(), offset = 8, query = '', note = '', style = '', facts = [], reviews = [], userLabel = '他', factBudget = 9000 }) {
+export function buildContext({ now = Date.now(), offset = 8, query = '', note = '', style = '', facts = [], reviews = [], episodes = [], userLabel = '他', factBudget = 9000 }) {
   const U = userLabel;
   const relevant = rankRelevant(facts, f => f.key + f.evidence + (f.note || ''), query).slice(0, 12).map(r => r.x);
   const ongoing = facts.filter(f => f.kind === 'ongoing').slice(-10);
@@ -30,6 +31,8 @@ export function buildContext({ now = Date.now(), offset = 8, query = '', note = 
     note && `你自己整理的笔记（后台定期对照聊天原文校对，仍可能有过时或记错的地方，${U}说的为准）：\n${note}`,
     style && `你自己总结的说话习惯（参考，不是规定；和人设冲突时以人设为准）：\n${style}`,
     reviews.length && `以前的回顾里和这次话题有关的段落（自然想起再提，不要硬提）：\n${reviews.join('\n')}`,
+    episodes.length && `以前聊过的相关片段（按日期；自然想起时可以说“你上次说……”，对不上就不提，不要硬提）：
+${JSON.stringify(episodes)}`,
     entries.length && `${U}的原话记录（同主题后来的更正优先；ongoing 是近期在进行的事，可能已经结束）：\n${JSON.stringify(entries)}`,
   ].filter(Boolean).join('\n\n');
 }

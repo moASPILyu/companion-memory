@@ -10,5 +10,6 @@ export { errorKind, weekStats, trendMd, ERROR_KINDS } from './stats.mjs';
 export { buildContext } from './context.mjs';
 export { healthReport } from './health.mjs';
 export { rankRelevant } from './rank.mjs';
+export { recallEpisodes, searchChat, searchTool, searchArgsIssue, parseDate as parseRecallDate, queryGrams } from './recall.mjs';
 export { stamp, weekKey, resolveLabels } from './text.mjs';
 export { createMemoryServer, injectMemory, textOf } from './server.mjs';
