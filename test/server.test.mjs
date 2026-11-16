@@ -63,6 +63,13 @@ test('代理：记两边的话、拼记忆、流式原样转发、重新生成�
     await (await post(base + '/v1/chat/completions', { model: 'm', messages: [...turn2, { role: 'assistant', content: '好呀' }, { role: 'user', content: '好哦' }] })).text();
     assert.equal(rows().filter(r => r.role === 'user').length, 3);
 
+    // 工具调用：同一轮的后续请求（最后一条是 tool）不再记用户那句
+    const n = rows().length;
+    await (await post(base + '/v1/chat/completions', { model: 'm', messages: [{ role: 'user', content: '查下天气' }] })).text();
+    await (await post(base + '/v1/chat/completions', { model: 'm', messages: [{ role: 'user', content: '查下天气' }, { role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'weather', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 't1', content: '晴' }] })).text();
+    assert.deepEqual(rows().slice(n).map(r => r.role), ['user', 'assistant', 'assistant']);
+    assert.equal(rows().slice(n).filter(r => r.text === '查下天气').length, 1);
+
     // X-Memory: off 原样转发、不记
     await (await post(base + '/v1/chat/completions', { model: 'm', messages: [{ role: 'user', content: '帮我起个标题' }] }, { 'X-Memory': 'off' })).text();
     assert.equal(up.seen.at(-1).body.messages[0].content, '帮我起个标题');

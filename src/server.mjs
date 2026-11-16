@@ -103,7 +103,9 @@ export function createMemoryServer(cfg) {
     const auth = String(req.headers.authorization || '');
     if (auth.startsWith('Bearer ')) borrowedKey = auth.slice(7);
     const mem = memFor(userId(req.headers['x-memory-user'] || body.user));
-    const meta = logUser(mem, text, msgs.length) ? {} : { regen: true };
+    // 工具调用的后续请求（最后一条是 tool / assistant）还是同一轮：用户那句已经记过，不再记，只记最后的文字回复
+    const continuing = msgs.at(-1)?.role !== 'user';
+    const meta = continuing || logUser(mem, text, msgs.length) ? {} : { regen: true };
     const block = mem.context(text);
     body.messages = injectMemory(msgs, block, { inject: cfg.inject });
     const r = await upstreamFetch(req, JSON.stringify(body), rest);
