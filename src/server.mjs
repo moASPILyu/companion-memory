@@ -55,7 +55,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
  *   upstream     机器人原来调的接口，比如 https://api.deepseek.com 或 https://api.openai.com/v1
  *   dataDir      数据目录（每个 user 一个子目录）
  *   persona / labels / offset / features / options：传给 CompanionMemory
- *   organizer    整理记忆用的模型 {baseUrl（默认同 upstream）, model, maxTokens}；key 读环境变量 MEMORY_LLM_KEY，
+ *   organizer    整理记忆用的模型 {baseUrl（默认同 upstream）, model, maxTokens}；key 读环境变量 MEMORY_LLM_KEY（命令行会先读本目录 .env），
  *                没设就借用机器人请求里带的 key（只在内存里，不落盘）
  *   inject       'user'（默认）或 'system'
  *   idleMinutes  每隔几分钟检查一次要不要整理（默认 5）
@@ -70,7 +70,7 @@ export function createMemoryServer(cfg) {
   let realLLM = null;
   const llm = cfg.llm || (async (system, user) => {
     const key = process.env.MEMORY_LLM_KEY || borrowedKey;
-    if (!key) throw new Error('还没有 key：设置 MEMORY_LLM_KEY，或者先让机器人通过代理说一句话');
+    if (!key) throw new Error('还没有 key：在 .env 或环境变量里设置 MEMORY_LLM_KEY，或者先让机器人通过代理说一句话');
     if (!realLLM || realLLM.key !== key) { realLLM = openaiLLM({ baseUrl: org.baseUrl, model: org.model, apiKey: key, maxTokens: org.maxTokens, extraBody: org.extraBody || {} }); realLLM.key = key; }
     return realLLM(system, user);
   });
