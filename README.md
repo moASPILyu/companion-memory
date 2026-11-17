@@ -67,6 +67,8 @@ AI 整理记忆时最常犯、也最难发现的错，是**把自己说的话记
 
 ### 和向量检索比
 
+关键词检索不是新东西。[Lucene / Elasticsearch](https://www.elastic.co/docs/reference/text-analysis/analysis-cjk-bigram-tokenfilter) 处理中文默认就切相邻二字组；[Zep（Graphiti）](https://neo4j.com/blog/developer/graphiti-knowledge-graph-memory/)、[Letta](https://docs.letta.com/guides/agents/base-tools)、Anthropic 的 [Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval) 都把关键词检索（BM25）当作混合检索的一路，和向量一起用。原因是要找的常是具体的名字和说法，字面对上才算找到，向量容易找来“意思差不多”的别的东西。本项目只用关键词这一路，换来不用装模型；打分是简化的 BM25（只算词的少见程度，聊天每行都短，没做长度归一）。
+
 我们在一个真实陪伴 AI 的 6479 句聊天上，拿本地向量模型 bge-base-zh-v1.5 比过。挑 60 段聊天，每段造 3 种问法，看那段原话进没进前 3 / 前 6：
 
 | 问法 | 二字组（本项目） | 向量 | 二字组 + 向量混合 |
